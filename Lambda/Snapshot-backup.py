@@ -6,7 +6,7 @@ import dateutil
 ec = boto3.client('ec2', 'ap-northeast-2')
 retention_days = 14
 
-def backup_snapshot(retention_days):
+def create_snapshot(retention_days):
     reservations = ec.describe_instances(
         Filters=[
             { 'Name': 'tag:Backup', 'Values': ['Y'] },
@@ -93,7 +93,7 @@ def delete_snapshot(retention_days):
 
 
 def lambda_handler(event, context):
-    backup_snapshot(retention_days)
+    create_snapshot(retention_days)
     delete_snapshot(retention_days)
     
     return 'successful'
