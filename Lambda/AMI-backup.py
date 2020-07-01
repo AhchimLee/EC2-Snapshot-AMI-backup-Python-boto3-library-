@@ -1,12 +1,13 @@
 # Automated AMI Backups
-
+import botocore
 import boto3
 import collections
 import datetime 
 
 ec = boto3.client('ec2', 'ap-northeast-2')
+retention_days = 14
 
-def create_ami():
+def create_ami(retention_days):
     reservations = ec.describe_instances(
         Filters=[
 			{ 'Name': 'tag:Backup', 'Values': ['Y'] },
@@ -55,11 +56,12 @@ def create_ami():
                     Description="Lambda created AMI of instance " + instance['InstanceId'],
                     NoReboot=True, 
                     DryRun=False)
-                                        
-                to_tag[retention_days].append(AMIid['ImageId'])
+
+                AMI_id = AMIid['ImageId']
+                to_tag[retention_days].append(AMI_id)
 
                 print("Retaining AMI %s of instance %s for %d days" % (
-                        AMIid['ImageId'],
+                        AMI_id,
                         instance['InstanceId'],
                         retention_days
                     )
@@ -69,22 +71,35 @@ def create_ami():
                 delete_fmt = delete_date.strftime('%Y-%m-%d')
                 
                 ec.create_tags(
-                    Resources=[AMIid['ImageId']],
+                    Resources=[AMI_id],
                     Tags=[
                             {'Key': 'Name', 'Value': name},
                             {'Key': 'DeleteOn', 'Value': delete_fmt}
                     ]
                 )
+
+                image_available_waiter = ec.get_waiter('image_available')
+
+                try:
+                    image_available_waiter.wait(
+                        ImageIds=[AMI_id], 
+                        WaiterConfig={
+                            'Delay': 10,
+                            'MaxAttempts': 2
+                        }
+                    )
+                except botocore.exceptions.WaiterError as e:
+                    print(e)
             
             #If the instance is not in running state        
             except IndexError as e:
                 print("Unexpected error, instance "+[res['Value'] for res in instance['Tags'] if res['Key'] == 'Name'][0]+"-"+"\""+instance['InstanceId']+"\""+" might be in the state other then 'running'. So, AMI creation skipped.")
 
-def delete_ami():
+def delete_ami(retention_days):
     images = ec.describe_images(Owners=['self'])['Images']
     snapshots = ec.describe_snapshots(OwnerIds=['self'])['Snapshots']
     
-    timeLimit = datetime.datetime.now() - datetime.timedelta(days=14) 
+    timeLimit = datetime.datetime.now() - datetime.timedelta(days=retention_days) 
     imageDeleteFlag = False
     
     for image in images:
@@ -118,7 +133,7 @@ def delete_ami():
 
 
 def lambda_handler(event, context):
-    create_ami()
-    delete_ami()
+    create_ami(retention_days)
+    delete_ami(retention_days)
     
     return 'successful'

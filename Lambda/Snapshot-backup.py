@@ -4,8 +4,9 @@ import datetime
 import dateutil
 
 ec = boto3.client('ec2', 'ap-northeast-2')
+retention_days = 14
 
-def backup_snapshot():
+def backup_snapshot(retention_days):
     reservations = ec.describe_instances(
         Filters=[
             { 'Name': 'tag:Backup', 'Values': ['Y'] },
@@ -35,7 +36,7 @@ def backup_snapshot():
                 vol_id, instance['InstanceId']))
             
             description = '%s-%s' % (instance_name, datetime.datetime.now().strftime("%Y%m%d"))
-            deleteOn = datetime.datetime.now() + datetime.timedelta(days=14)
+            deleteOn = datetime.datetime.now() + datetime.timedelta(days=retention_days)
             
             response=ec.create_snapshot(
                 Description=description,
@@ -68,14 +69,14 @@ def backup_snapshot():
                 print(e)
 
 
-def delete_snapshot():
+def delete_snapshot(retention_days):
     # Get the 14 days old date
     timeLimit=datetime.datetime.now() - datetime.timedelta(days=14)  
     ebsAllSnapshots = ec.describe_snapshots(OwnerIds=['self'])
     
     for snapshot in ebsAllSnapshots['Snapshots']:
         strdate = snapshot['StartTime'].date()
-        deleteOn = snapshot['StartTime'] + datetime.timedelta(days=14)
+        deleteOn = snapshot['StartTime'] + datetime.timedelta(days=retention_days)
         deleteOntag = [tag['Key'] for tag in snapshot.get('Tags', 'N') if tag != 'N' and tag['Key'] == 'DeleteOn']
         
         nametemp = [tag['Value'] for tag in snapshot.get('Tags', 'N') if tag != 'N' and tag['Key'] == 'Name']
@@ -92,7 +93,7 @@ def delete_snapshot():
 
 
 def lambda_handler(event, context):
-    backup_snapshot()
-    delete_snapshot()
+    backup_snapshot(retention_days)
+    delete_snapshot(retention_days)
     
     return 'successful'
